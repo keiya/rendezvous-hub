@@ -1,0 +1,16 @@
+version: '2'
+services:
+  web:
+    build: .
+    command: [bundle, exec, ruby, app.rb]
+    volumes:
+      - .:/app
+    ports:
+      - "80:4567"
+    links:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+  redis:
+    image: redis
