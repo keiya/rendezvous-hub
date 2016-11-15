@@ -46,6 +46,7 @@ get "/nodes/random" do
   if myhash = redis.get(pkey)
     myobj = JSON.parse myhash
     if myobj and myobj.has_key?(:pair)
+      logger.info "[PAIR FOUND] myhash="+myhash
       return myobj[:pair].to_json
     end
   end
@@ -58,8 +59,10 @@ get "/nodes/random" do
     pair_key = redis.randomkey
 	#begin
 	  if pair_cand = redis.get(pair_key)
+        logger.info "[PAIR CANDIDATE] pair_cand="+pair_cand
         pair_cand_obj = JSON.parse pair_cand
-	    if not pair_cand_obj.has_key?(:pair)
+	    if (pair_cand_obj['keys']['ed25519'] != pkey) and (not pair_cand_obj.has_key?(:pair))
+          logger.info "[PAIR FOUND IN PAIR CANDIDATE] (my pubkey=#{pkey})"
 	      found_pair = pair_cand_obj
 	      found_pair[:pair] = myobj
 	      redis.del(pkey)
