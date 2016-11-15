@@ -26,15 +26,21 @@ get "/flush" do
 end
 
 get "/dump" do
-redis.keys('*')
+  keys = redis.keys('*')
+  dump = []
+  keys.each {  |key| dump.push(redis.get(key)) }
+  dump
 end
 
 # registration of a new client
 post "/nodes" do
   obj = JSON.parse request.body.read
-  pubkey = obj["keys"]["ed25519"]
-  redis.set(pubkey, obj.to_json)
-  redis.expire(pubkey, 20)
+  pubkey = obj['keys']['ed25519']
+  obj['ip'] = request.ip
+  if not redis.get(pubkey)
+    redis.set(pubkey, obj.to_json)
+    redis.expire(pubkey, 20)
+  end
 end
 
 
@@ -43,11 +49,13 @@ get "/nodes/random" do
   pkey = params['pubkey']
 
   # check A's own hash
+  logger.info "[PARAM] pkey="+pkey
   if myhash = redis.get(pkey)
+    logger.info "[FOUND MYSELF] myhash="+myhash
     myobj = JSON.parse myhash
-    if myobj and myobj.has_key?(:pair)
+    if myobj.has_key?('pair')
       logger.info "[PAIR FOUND] myhash="+myhash
-      return myobj[:pair].to_json
+      return myobj['pair'].to_json
     end
   end
 
@@ -62,11 +70,12 @@ get "/nodes/random" do
         logger.info "[PAIR CANDIDATE] pair_cand="+pair_cand
         pair_cand_obj = JSON.parse pair_cand
 	    if (pair_cand_obj['keys']['ed25519'] != pkey) and (not pair_cand_obj.has_key?(:pair))
-          logger.info "[PAIR FOUND IN PAIR CANDIDATE] (my pubkey=#{pkey})"
+          logger.info "[PAIR FOUND IN PAIR CANDIDATE] (my pubkey=#{pkey}), (pair pubkey=#{pair_key})"
 	      found_pair = pair_cand_obj
 	      found_pair[:pair] = myobj
 	      redis.del(pkey)
-          redis.getset(pair_key, found_pair.to_json)
+          logger.info "[PAIR SET] #{found_pair.to_json}"
+          redis.set(pair_key, found_pair.to_json)
           redis.expire(pair_key, 20) # TODO: calculate expire
 	    end
 	  end
