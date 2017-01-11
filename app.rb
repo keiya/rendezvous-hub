@@ -18,21 +18,17 @@ ecdsa_public = OpenSSL::PKey::EC.new ecdsa_key
 ecdsa_public.private_key = nil
 
 before '/nodes*' do
-  p request.env
-  if request.env['HTTP_AUTHORIZATION']
+  if request.env['HTTP_AUTHORIZATION'] && request.env['HTTP_X_POW']
     begin
       @jwt_token = JWT.decode request.env["HTTP_AUTHORIZATION"].slice(7..-1), ecdsa_public, true, { :algorithm => 'ES256' }
+      p Digest::SHA256.hexdigest(request.env['HTTP_X_POW'])
+      p @jwt_token[0]['data']['challenge']
+      if !Digest::SHA256.hexdigest(request.env['HTTP_X_POW']).start_with?(@jwt_token[0]['data']['challenge'])
+        status 401
+      end
     rescue JWT::ExpiredSignature
       status 401
     end
-  #  request.body.rewind
-  ##  begin
-  ##  @request_payload = JSON.parse request.body.read
-  ##  rescue
-  ##  @request_payload = nil
-  ##  end
-  ##  @jwt = JWT.decode request.env["Authorization"] if request.env.has_key?('Authorization')
-  #  @request_payload = request.body.read
   else
     status 401
   end
@@ -114,7 +110,7 @@ post "/echo" do
 end
 
 get "/jwt/challenge" do
-  challenge = (0...8).map{ rand(32..126).chr }.join
+  challenge = (0...4).map{ ["1","2","3","4","5","6","7","8","9","0","a","b","c","d","e","f",].sample }.join
   exp = Time.now.to_i + 20
   payload = { exp: exp, data: { pubkey: params['pubkey'], challenge: challenge } }
 
