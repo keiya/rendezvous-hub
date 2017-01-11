@@ -4,4 +4,5 @@ gem 'sinatra'
 gem "redis"
 
 gem 'jwt'
+gem 'red25519'
 

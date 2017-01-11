@@ -6,7 +6,7 @@ services:
     volumes:
       - .:/app
     ports:
-      - "80:4567"
+      - "4567:4567"
     links:
       - redis
     environment:

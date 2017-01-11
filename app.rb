@@ -2,6 +2,9 @@
 require "sinatra"
 require "redis"
 require "jwt"
+require 'red25519'
+require 'base64'
+
 
 redis = Redis.new(
   host: ENV["REDIS_HOST"],
@@ -10,16 +13,30 @@ redis = Redis.new(
 
 set :bind, '0.0.0.0'
 
-#before do
-#  request.body.rewind
-##  begin
-##  @request_payload = JSON.parse request.body.read
-##  rescue
-##  @request_payload = nil
-##  end
-##  @jwt = JWT.decode request.env["Authorization"] if request.env.has_key?('Authorization')
-#  @request_payload = request.body.read
-#end
+ecdsa_key = OpenSSL::PKey::EC.new File.read 'server_private.pem'
+ecdsa_public = OpenSSL::PKey::EC.new ecdsa_key
+ecdsa_public.private_key = nil
+
+before '/nodes*' do
+  p request.env
+  if request.env['HTTP_AUTHORIZATION']
+    begin
+      @jwt_token = JWT.decode request.env["HTTP_AUTHORIZATION"].slice(7..-1), ecdsa_public, true, { :algorithm => 'ES256' }
+    rescue JWT::ExpiredSignature
+      status 401
+    end
+  #  request.body.rewind
+  ##  begin
+  ##  @request_payload = JSON.parse request.body.read
+  ##  rescue
+  ##  @request_payload = nil
+  ##  end
+  ##  @jwt = JWT.decode request.env["Authorization"] if request.env.has_key?('Authorization')
+  #  @request_payload = request.body.read
+  else
+    status 401
+  end
+end
 
 get "/flush" do
   redis.flushdb
@@ -89,6 +106,22 @@ end
 
 get "/nodes/debug" do
   random = redis.randomkey
-redis.get(random)
-
+  redis.get(random)
 end
+
+post "/echo" do
+  request.body.read
+end
+
+get "/jwt/challenge" do
+  challenge = (0...8).map{ rand(32..126).chr }.join
+  exp = Time.now.to_i + 20
+  payload = { exp: exp, data: { pubkey: params['pubkey'], challenge: challenge } }
+
+  token = JWT.encode payload, ecdsa_key, 'ES256'
+
+#  pkey = Base64.urlsafe_decode64(params['pubkey'])
+#  signing_key = Ed25519::VerifyKey.new(pkey)
+end
+
+
