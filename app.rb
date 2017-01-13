@@ -27,16 +27,11 @@ def get_node(pubkey)
   end
 end
 
-def set_node(pubkey, obj)
-  if not settings.redis.get(pubkey)
-    settings.redis.set(pubkey, obj.to_json)
-    settings.redis.expire(pubkey, 20)
-  end
-end
-
-def set_node!(pubkey, obj)
-  settings.redis.set(pubkey, obj.to_json)
-  settings.redis.expire(pubkey, 20)
+def set_node(pubkey, node)
+  node_json = node.to_json
+  settings.redis.set(pubkey, node_json)
+  settings.redis.expire(pubkey, 60)
+  node_json
 end
 
 def gen_jwt(ctr=0)
@@ -47,7 +42,8 @@ def gen_jwt(ctr=0)
 end
 
 before do
-  p 'all!'
+  content_type :json
+
   if request.env['HTTP_AUTHORIZATION']
     @jwt_token = JWT.decode request.env["HTTP_AUTHORIZATION"].slice(7..-1), settings.ecdsa_public, true, { :algorithm => 'ES256' }
     p @jwt_token
@@ -63,22 +59,21 @@ before do
 end
 
 before '/nodes*' do
-  p 'nodes!'
-
   next_ctr =  + 1
 
   node = get_node(@pubkey)
+  p node
 
   if node.nil?
     node = {}
     node['ctr'] = 1
   else
     if node['ctr'] != @jwt_token[0]['data']['ctr']
-      status 400
+      halt 400
     end
     node['ctr'] += 1
   end
-  set_node!(@pubkey, node)
+  set_node(@pubkey, node)
 
   response.headers['X-Jwt'] = gen_jwt node['ctr']
 
@@ -87,13 +82,13 @@ before '/nodes*' do
       p Digest::SHA256.hexdigest(request.env['HTTP_X_POW'])
       p @jwt_token[0]['data']['challenge']
       if !Digest::SHA256.hexdigest(request.env['HTTP_X_POW']).start_with?(@jwt_token[0]['data']['challenge'])
-        status 401
+        halt 401
       end
     rescue JWT::ExpiredSignature
-      status 401
+      halt 401
     end
   else
-    status 401
+    halt 401
   end
 end
 
@@ -110,10 +105,14 @@ end
 
 # registration of a new client
 post "/nodes" do
-  obj = JSON.parse request.body.read
-  pubkey = obj['keys']['ed25519']
-  obj['ip'] = request.ip
-  set_node(pubkey,obj)
+  reqbody = JSON.parse request.body.read
+  pubkey = reqbody['keys']['ed25519']
+  node = get_node(pubkey)
+  if node.dig('user','pair','user').nil?
+    node['user'] = reqbody
+    node['user']['ip'] = request.ip
+    set_node(pubkey,node)
+  end
 end
 
 
@@ -122,28 +121,29 @@ get "/nodes/random" do
   logger.info "[PARAM] @pubkey="+@pubkey
   if myobj = get_node(@pubkey)
     logger.info "[FOUND MYSELF]"
-    if myobj.has_key?('pair')
-      logger.info "[PAIR FOUND] myhash="+myobj['pair'].to_json
-      return myobj['pair'].to_json
+    if myobj['user'].has_key?('pair')
+      logger.info "[PAIR FOUND] myhash="+myobj['user']['pair'].to_json
+	  settings.redis.del(@pubkey)
+      return myobj.dig('user','pair','user').to_json
     end
   end
 
   cnt = 0
-  found_pair = nil
+  found_pair = {}
 
   # exclude paired hash
-  while not found_pair and cnt < 100
+  while found_pair.empty? and cnt < 100
     pair_key = settings.redis.randomkey
 	#begin
 	  if pair_cand = get_node(pair_key)
-        cand_key = pair_cand.dig('keys','ed25519')
-	    if (not cand_key.nil?) and (cand_key != @pubkey) and (not pair_cand.has_key?(:pair))
+        cand_key = pair_cand.dig('user','keys','ed25519')
+	    if (not cand_key.nil?) and (cand_key != @pubkey) and (not pair_cand['user'].has_key?(:pair))
           logger.info "[PAIR FOUND IN PAIR CANDIDATE] (my pubkey=#{@pubkey}), (pair pubkey=#{pair_key})"
 	      found_pair = pair_cand
-	      found_pair[:pair] = myobj
+	      found_pair['user'][:pair] = myobj
 	      settings.redis.del(@pubkey)
-          logger.info "[PAIR SET] #{found_pair.to_json}"
-          set_node!(pair_key, found_pair)
+          set_node(pair_key, found_pair)
+          found_pair['user'].delete(:pair)
 	    end
 	  end
 	#rescue JSON::ParserError
@@ -151,7 +151,7 @@ get "/nodes/random" do
 	cnt += 1
   end
 
-  found_pair.to_json
+  found_pair.dig('user').to_json
 end
 
 get "/nodes/debug" do
@@ -165,6 +165,7 @@ end
 
 get "/jwt/challenge" do
   response.headers['X-Jwt'] = gen_jwt
+  nil
 end
 
 
