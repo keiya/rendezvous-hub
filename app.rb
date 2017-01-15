@@ -117,13 +117,18 @@ end
 
 
 get "/nodes/random" do
-  # check A's own hash
-  logger.info "[PARAM] @pubkey="+@pubkey
   if myobj = get_node(@pubkey)
-    logger.info "[FOUND MYSELF]"
     if myobj['user'].has_key?('pair')
-      logger.info "[PAIR FOUND] myhash="+myobj['user']['pair'].to_json
 	  settings.redis.del(@pubkey)
+      myobj['user']['pair']['user']['networks'] = {
+        type: 'vpn',
+        vpn: {
+          assigned_ip: { subnet: 24, ips: ['10.0.77.1','10.0.77.3'] },
+          gateway_ip: '10.0.77.2',
+          network: '10.0.77.0',
+          subnet: 24,
+        }
+      }
       return myobj.dig('user','pair','user').to_json
     end
   end
@@ -131,23 +136,27 @@ get "/nodes/random" do
   cnt = 0
   found_pair = {}
 
-  # exclude paired hash
   while found_pair.empty? and cnt < 100
     pair_key = settings.redis.randomkey
-	#begin
 	  if pair_cand = get_node(pair_key)
         cand_key = pair_cand.dig('user','keys','ed25519')
 	    if (not cand_key.nil?) and (cand_key != @pubkey) and (not pair_cand['user'].has_key?(:pair))
-          logger.info "[PAIR FOUND IN PAIR CANDIDATE] (my pubkey=#{@pubkey}), (pair pubkey=#{pair_key})"
 	      found_pair = pair_cand
 	      found_pair['user'][:pair] = myobj
 	      settings.redis.del(@pubkey)
           set_node(pair_key, found_pair)
           found_pair['user'].delete(:pair)
+          found_pair['user']['networks'] = {
+            type: 'vpn',
+            vpn: {
+              assigned_ip: { subnet: 24, ips: ['10.0.77.2','10.0.77.4'] },
+              gateway_ip: '10.0.77.1',
+              network: '10.0.77.0',
+              subnet: 24,
+            }
+          }
 	    end
 	  end
-	#rescue JSON::ParserError
-	#end
 	cnt += 1
   end
 
