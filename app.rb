@@ -123,7 +123,7 @@ get "/nodes/random" do
       myobj['user']['pair']['user']['networks'] = {
         type: 'vpn',
         vpn: {
-          assigned_ip: { subnet: 24, ips: ['10.0.77.1','10.0.77.3'] },
+          assigned_ips: ['10.0.77.1','10.0.77.3'],
           gateway_ip: '10.0.77.2',
           network: '10.0.77.0',
           subnet: 24,
@@ -149,7 +149,7 @@ get "/nodes/random" do
           found_pair['user']['networks'] = {
             type: 'vpn',
             vpn: {
-              assigned_ip: { subnet: 24, ips: ['10.0.77.2','10.0.77.4'] },
+              assigned_ips: ['10.0.77.2','10.0.77.4'],
               gateway_ip: '10.0.77.1',
               network: '10.0.77.0',
               subnet: 24,
